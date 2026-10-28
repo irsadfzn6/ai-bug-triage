@@ -1,0 +1,4 @@
+node_modules
+.env
+.superpowers
+logs/triage-state.json
