@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Bug Triage & Engineering Operations Console</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-left">
+      <div class="logo-mark">AG</div>
+      <div>
+        <h1>AI Bug Triage & Deduplication Console</h1>
+        <p class="subtitle">DeepSeek v4.1 Flash • Correlated Server Traces • Zero-Dup GitHub Issues</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="repo-badge">
+        <span class="dot live"></span>
+        <a id="repoLink" href="https://github.com/irsadfzn6/ai-bug-triage" target="_blank" rel="noopener">irsadfzn6/ai-bug-triage</a>
+      </div>
+      <button id="btnResetStore" class="btn btn-secondary btn-sm" title="Clear local triage store">Reset Store</button>
+    </div>
+  </header>
+
+  <main class="console-grid">
+    <!-- Left Column: Bug Ingestion & Simulator -->
+    <section class="panel panel-left">
+      <div class="panel-header">
+        <h2>1. Inbound Bug Ingestion</h2>
+        <span class="badge">Live Intake</span>
+      </div>
+
+      <div class="preset-section">
+        <label class="section-label">Quick Production Scenarios:</label>
+        <div class="scenario-buttons">
+          <button class="btn btn-scenario" data-scenario="p0-checkout">
+            <span class="scenario-badge p0">P0</span>
+            <span class="scenario-text"><strong>Crash Voucher Checkout</strong> (sess_checkout_901)</span>
+          </button>
+          <button class="btn btn-scenario" data-scenario="p0-checkout-dup">
+            <span class="scenario-badge dup">DUP</span>
+            <span class="scenario-text"><strong>Vague User Duplicate</strong> ("Aplikasi mental")</span>
+          </button>
+          <button class="btn btn-scenario" data-scenario="p1-auth">
+            <span class="scenario-badge p1">P1</span>
+            <span class="scenario-text"><strong>Auth JWT Clock Skew</strong> (sess_auth_404)</span>
+          </button>
+          <button class="btn btn-scenario" data-scenario="p0-deadlock">
+            <span class="scenario-badge p0">P0</span>
+            <span class="scenario-text"><strong>Postgres Deadlock</strong> (sess_inv_771)</span>
+          </button>
+        </div>
+      </div>
+
+      <form id="bugReportForm" class="report-form">
+        <div class="form-group">
+          <label for="reporter">Reporter Email</label>
+          <input type="text" id="reporter" value="rina.qa@kurodesk.id" required>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label for="sessionId">Session ID (for Log Correlation)</label>
+            <input type="text" id="sessionId" value="sess_checkout_901">
+          </div>
+          <div class="form-group flex-1">
+            <label for="environment">Environment</label>
+            <select id="environment">
+              <option value="production">production</option>
+              <option value="staging">staging</option>
+              <option value="development">development</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="description">Raw User Bug Description</label>
+          <textarea id="description" rows="4" required>Waktu saya coba masukkan kode voucher KARTINI26 di keranjang dan klik Bayar Sekarang, muncul pop-up error 500 dan aplikasi langsung mental ke halaman login.</textarea>
+        </div>
+
+        <div class="form-footer">
+          <label class="checkbox-label">
+            <input type="checkbox" id="syncGithubCheckbox" checked>
+            <span>Sync Live to GitHub Issues</span>
+          </label>
+          <button type="submit" id="btnSubmitReport" class="btn btn-primary">
+            <span class="btn-text">Execute AI Triage Pipeline</span>
+          </button>
+        </div>
+      </form>
+
+      <!-- MCP Tool Tester Drawer -->
+      <div class="mcp-tester-card">
+        <div class="mcp-header">
+          <h3>Model Context Protocol (MCP) Bridge</h3>
+          <span class="badge badge-mono">stdio JSON-RPC 2.0</span>
+        </div>
+        <p class="mcp-desc">This application exposes an MCP server for agentic AI tools. Test tools directly:</p>
+        <div class="mcp-actions">
+          <button class="btn btn-secondary btn-xs" data-mcp-tool="list_triaged_issues">tool: list_triaged_issues</button>
+          <button class="btn btn-secondary btn-xs" data-mcp-tool="search_correlated_logs">tool: search_correlated_logs</button>
+        </div>
+        <pre id="mcpOutput" class="mcp-output">MCP output will appear here...</pre>
+      </div>
+    </section>
+
+    <!-- Right Column: Engineering Triage Board -->
+    <section class="panel panel-right">
+      <div class="panel-header">
+        <h2>2. Live Engineering Triage Board</h2>
+        <div class="stats-summary" id="statsSummary">
+          <span class="stat-pill"><strong id="statTotalIssues">0</strong> Open Issues</span>
+          <span class="stat-pill highlight"><strong id="statDeduplicated">0</strong> Duplicates Merged</span>
+          <span class="stat-pill danger"><strong id="statP0">0</strong> P0 Critical</span>
+        </div>
+      </div>
+
+      <!-- Execution Status Tracker -->
+      <div id="executionTracker" class="execution-tracker hidden">
+        <div class="tracker-step active" id="stepCorrelate">
+          <span class="step-num">1</span>
+          <span class="step-title">Log Correlation</span>
+        </div>
+        <div class="tracker-step" id="stepLLM">
+          <span class="step-num">2</span>
+          <span class="step-title">DeepSeek v4.1 Triage</span>
+        </div>
+        <div class="tracker-step" id="stepDedup">
+          <span class="step-num">3</span>
+          <span class="step-title">Deduplication Lock</span>
+        </div>
+        <div class="tracker-step" id="stepGitHub">
+          <span class="step-num">4</span>
+          <span class="step-title">GitHub Issue Sync</span>
+        </div>
+      </div>
+
+      <!-- Live Issues List -->
+      <div class="issues-container">
+        <div id="issuesList" class="issues-list">
+          <div class="empty-state">
+            <p>No bugs triaged yet.</p>
+            <p class="empty-hint">Click one of the Quick Production Scenarios on the left or submit a report to test the AI pipeline.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
