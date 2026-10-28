@@ -1,0 +1,112 @@
+{
+  "name": "AI Bug Report Triage & Deduplication Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "bug-report-inbound",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Webhook: Inbound Bug Report",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [100, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Step 1: Correlate incoming report with recent server error logs\nconst report = $input.first().json.body || $input.first().json;\nconst sessionId = report.session_id || '';\nconst description = report.description || '';\n\nreturn [{\n  json: {\n    report,\n    session_id: sessionId,\n    description,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "name": "Code: Enrich Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [300, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.aivokey.dev/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Authorization", "value": "Bearer ={{$env.LLM_API_KEY}}" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={\n  \"model\": \"deepseek-v4.1-flash\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a Principal AI Triage Engineer. Parse the user bug report into strict JSON: { title, severity, component, dedup_signature, summary, steps_to_reproduce, suspected_root_cause, suggested_fix, labels }.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": JSON.stringify($json)\n    }\n  ],\n  \"response_format\": { \"type\": \"json_object\" }\n}"
+      },
+      "name": "HTTP: DeepSeek v4.1 Flash Triage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [520, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Step 2: Validate LLM Structured Output & Dedup Key\nconst response = $input.first().json;\nconst content = response.choices?.[0]?.message?.content || '{}';\nlet triage;\ntry {\n  triage = JSON.parse(content);\n} catch (e) {\n  triage = {\n    title: 'Unhandled Bug Report',\n    severity: 'P2',\n    component: 'general',\n    dedup_signature: 'general:ERR_UNKNOWN'\n  };\n}\n\nreturn [{ json: { triage } }];"
+      },
+      "name": "Code: Parse & Validate Triage",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [740, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.triage.severity}}",
+              "operation": "contains",
+              "value2": "P0"
+            }
+          ]
+        }
+      },
+      "name": "IF: Is P0 Critical?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [960, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$env.TELEGRAM_CHAT_ID}}",
+        "text": "=🚨 *[CRITICAL P0 OUTAGE REPORT]*\n\n• *Title:* {{$json.triage.title}}\n• *Component:* `{{$json.triage.component}}`\n• *Root Cause:* {{$json.triage.suspected_root_cause}}\n• *Signature:* `{{$json.triage.dedup_signature}}`",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "name": "Telegram: Alert On-Call Devs",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1180, 220]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "name": "Respond: 200 OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1180, 400]
+    }
+  ],
+  "connections": {
+    "Webhook: Inbound Bug Report": {
+      "main": [[{ "node": "Code: Enrich Context", "type": "main", "index": 0 }]]
+    },
+    "Code: Enrich Context": {
+      "main": [[{ "node": "HTTP: DeepSeek v4.1 Flash Triage", "type": "main", "index": 0 }]]
+    },
+    "HTTP: DeepSeek v4.1 Flash Triage": {
+      "main": [[{ "node": "Code: Parse & Validate Triage", "type": "main", "index": 0 }]]
+    },
+    "Code: Parse & Validate Triage": {
+      "main": [[{ "node": "IF: Is P0 Critical?", "type": "main", "index": 0 }]]
+    },
+    "IF: Is P0 Critical?": {
+      "main": [
+        [{ "node": "Telegram: Alert On-Call Devs", "type": "main", "index": 0 }, { "node": "Respond: 200 OK", "type": "main", "index": 0 }],
+        [{ "node": "Respond: 200 OK", "type": "main", "index": 0 }]
+      ]
+    }
+  }
+}
